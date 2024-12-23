@@ -1,0 +1,169 @@
+diff --git a/src/vs/editor/browser/viewParts/lineNumbers/lineNumbers.css b/src/vs/editor/browser/viewParts/lineNumbers/lineNumbers.css
+index 2961137b032..ae94b91a103 100644
+--- a/src/vs/editor/browser/viewParts/lineNumbers/lineNumbers.css
++++ b/src/vs/editor/browser/viewParts/lineNumbers/lineNumbers.css
+@@ -12,6 +12,8 @@
+ 	vertical-align: middle;
+ 	box-sizing: border-box;
+ 	cursor: default;
++	height: 100%;
++	font-size: 80%;
+ }
+ 
+ .monaco-editor .relative-current-line-number {
+diff --git a/src/vs/editor/common/config/editorOptions.ts b/src/vs/editor/common/config/editorOptions.ts
+index a1c42699069..62db8db4e1e 100644
+--- a/src/vs/editor/common/config/editorOptions.ts
++++ b/src/vs/editor/common/config/editorOptions.ts
+@@ -2684,19 +2684,22 @@ export class EditorLayoutInfoComputer extends ComputedEditorOption<EditorOption.
+ 		const showFoldingDecoration = options.get(EditorOption.showFoldingControls) !== 'never';
+ 
+ 		let lineDecorationsWidth = options.get(EditorOption.lineDecorationsWidth);
++		lineDecorationsWidth = 1;
+ 		if (folding && showFoldingDecoration) {
+ 			lineDecorationsWidth += 16;
+ 		}
+ 
+ 		let lineNumbersWidth = 0;
+ 		if (showLineNumbers) {
+-			const digitCount = Math.max(lineNumbersDigitCount, lineNumbersMinChars);
+-			lineNumbersWidth = Math.round(digitCount * maxDigitWidth);
++			lineDecorationsWidth = 4;
++			let digitCount = Math.max(lineNumbersDigitCount, lineNumbersMinChars);
++			digitCount = lineNumbersDigitCount;
++			lineNumbersWidth = Math.round(digitCount * maxDigitWidth * 0.8);
+ 		}
+ 
+ 		let glyphMarginWidth = 0;
+ 		if (showGlyphMargin) {
+-			glyphMarginWidth = lineHeight * env.glyphMarginDecorationLaneCount;
++			glyphMarginWidth = lineHeight * env.glyphMarginDecorationLaneCount * 0.25;
+ 		}
+ 
+ 		let glyphMarginLeft = 0;
+diff --git a/src/vs/editor/contrib/folding/browser/syntaxRangeProvider.ts b/src/vs/editor/contrib/folding/browser/syntaxRangeProvider.ts
+index 97fa12bb6ca..5a32db82a74 100644
+--- a/src/vs/editor/contrib/folding/browser/syntaxRangeProvider.ts
++++ b/src/vs/editor/contrib/folding/browser/syntaxRangeProvider.ts
+@@ -74,7 +74,8 @@ function collectSyntaxRanges(providers: FoldingRangeProvider[], model: ITextMode
+ 				const nLines = model.getLineCount();
+ 				for (const r of ranges) {
+ 					if (r.start > 0 && r.end > r.start && r.end <= nLines) {
+-						rangeData.push({ start: r.start, end: r.end, rank: i, kind: r.kind });
++						// vscode by default doesn't include the closing '}' in the folding range.
++						rangeData.push({ start: r.start, end: r.end + 1, rank: i, kind: r.kind });
+ 					}
+ 				}
+ 			}
+diff --git a/src/vs/platform/product/common/product.ts b/src/vs/platform/product/common/product.ts
+index 1a2a6192ec8..7203b70c360 100644
+--- a/src/vs/platform/product/common/product.ts
++++ b/src/vs/platform/product/common/product.ts
+@@ -27,6 +27,15 @@ else if (globalThis._VSCODE_PRODUCT_JSON && globalThis._VSCODE_PACKAGE_JSON) {
+ 	// Obtain values from product.json and package.json-data
+ 	product = globalThis._VSCODE_PRODUCT_JSON as unknown as IProductConfiguration;
+ 
++	Object.assign(product, {
++		extensionsGallery: {
++			serviceUrl: 'https://marketplace.visualstudio.com/_apis/public/gallery',
++			searchUrl: 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery',
++			itemUrl: 'https://marketplace.visualstudio.com/items',
++			controlUrl: '',
++		}
++	});
++
+ 	// Running out of sources
+ 	if (env['VSCODE_DEV']) {
+ 		Object.assign(product, {
+diff --git a/src/vs/platform/windows/electron-main/windowImpl.ts b/src/vs/platform/windows/electron-main/windowImpl.ts
+index 3a9132dd3cd..290ecec914e 100644
+--- a/src/vs/platform/windows/electron-main/windowImpl.ts
++++ b/src/vs/platform/windows/electron-main/windowImpl.ts
+@@ -3,17 +3,17 @@
+  *  Licensed under the MIT License. See License.txt in the project root for license information.
+  *--------------------------------------------------------------------------------------------*/
+ 
+-import electron, { BrowserWindowConstructorOptions } from 'electron';
+-import { DeferredPromise, RunOnceScheduler, timeout } from '../../../base/common/async.js';
+-import { CancellationToken } from '../../../base/common/cancellation.js';
+-import { toErrorMessage } from '../../../base/common/errorMessage.js';
+-import { Emitter, Event } from '../../../base/common/event.js';
+-import { Disposable } from '../../../base/common/lifecycle.js';
+-import { FileAccess, Schemas } from '../../../base/common/network.js';
+-import { getMarks, mark } from '../../../base/common/performance.js';
+-import { isBigSurOrNewer, isMacintosh, isWindows } from '../../../base/common/platform.js';
+-import { URI } from '../../../base/common/uri.js';
+-import { localize } from '../../../nls.js';
++import electron, { BrowserWindowConstructorOptions, app, BrowserWindow, screen, globalShortcut } from 'electron';
++import { DeferredPromise, RunOnceScheduler, timeout } from 'vs/base/common/async';
++import { CancellationToken } from 'vs/base/common/cancellation';
++import { toErrorMessage } from 'vs/base/common/errorMessage';
++import { Emitter, Event } from 'vs/base/common/event';
++import { Disposable } from 'vs/base/common/lifecycle';
++import { FileAccess, Schemas } from 'vs/base/common/network';
++import { getMarks, mark } from 'vs/base/common/performance';
++import { isBigSurOrNewer, isMacintosh, isWindows } from 'vs/base/common/platform';
++import { URI } from 'vs/base/common/uri';
++import { localize } from 'vs/nls';
+ import { release } from 'os';
+ import { ISerializableCommandAction } from '../../action/common/action.js';
+ import { IBackupMainService } from '../../backup/electron-main/backup.js';
+@@ -612,7 +612,44 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
+ 
+ 			// Create the browser window
+ 			mark('code/willCreateCodeBrowserWindow');
+-			this._win = new electron.BrowserWindow(options);
++
++			this._win = new BrowserWindow(options);
++			this._win.setAlwaysOnTop(true);
++			this._win.setVisibleOnAllWorkspaces(true, {
++				visibleOnFullScreen: true,
++			});
++
++			const mainWindow = this._win;
++			const setWindowBounds = (height: number | null) => {
++				height = height || screen.getPrimaryDisplay().size.height - 200;
++				const yMargin = 5;
++				mainWindow.setBounds({
++					x: 0,
++					y: screen.getPrimaryDisplay().size.height - height + yMargin,
++					width: screen.getPrimaryDisplay().size.width,
++					height: height,
++				});
++			};
++			setWindowBounds(null);
++
++			const toggleVisiblity = () => {
++				if (mainWindow.isVisible()) {
++					mainWindow.hide();
++					app.hide();
++				} else {
++					mainWindow.show();
++					mainWindow.focus();
++					const [_, height] = mainWindow.getSize();
++					setWindowBounds(height);
++				}
++			};
++			// Toggle the visibility globally.
++			app.whenReady().then(() => {
++				mainWindow.focus();
++				globalShortcut.register('Command+.', toggleVisiblity);
++				globalShortcut.register('Control+/', toggleVisiblity);
++			});
++
+ 			mark('code/didCreateCodeBrowserWindow');
+ 
+ 			this._id = this._win.id;
+diff --git a/src/vs/workbench/services/layout/browser/layoutService.ts b/src/vs/workbench/services/layout/browser/layoutService.ts
+index 2d2b1d64426..88d3855211a 100644
+--- a/src/vs/workbench/services/layout/browser/layoutService.ts
++++ b/src/vs/workbench/services/layout/browser/layoutService.ts
+@@ -338,7 +338,7 @@ export function shouldShowCustomTitleBar(configurationService: IConfigurationSer
+ 
+ 	if (!isWeb) {
+ 		const showCustomTitleBar = configurationService.getValue<CustomTitleBarVisibility>(TitleBarSetting.CUSTOM_TITLE_BAR_VISIBILITY);
+-		if (showCustomTitleBar === CustomTitleBarVisibility.NEVER && nativeTitleBarEnabled || showCustomTitleBar === CustomTitleBarVisibility.WINDOWED && inFullscreen) {
++		if (showCustomTitleBar === CustomTitleBarVisibility.NEVER || showCustomTitleBar === CustomTitleBarVisibility.WINDOWED && inFullscreen) {
+ 			return false;
+ 		}
+ 	}
